@@ -1,0 +1,665 @@
+---
+title: "Table A4: Statistics for K-Fold Cross Validation of Deal Size Imputation Model"
+output:
+  github_document:
+    html_preview: false
+---
+
+This notebook runs the 10-fold cross validation of the MICE deal size imputation
+model (no public caps variant: the fund-size cap applies only to private-target
+deals) and reports Table A4.
+
+The k-fold run takes many hours (20 imputations x 15 iterations per fold), so it
+only executes when `run_kfold` is set to `TRUE`. Otherwise the notebook builds
+Table A4 from the saved fold predictions in `kfold_dir`.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(data.table)  # data manipulation
+library(mice)        # multiple imputation by chained equations
+library(forcats)     # factor collapsing
+library(flextable)   # publication-quality tables with Word export
+library(officer)     # borders and page setup for the .docx output
+
+# Set to TRUE to rerun the k-fold cross validation from scratch (or resume it)
+run_kfold <- FALSE
+
+# PitchBook buyout data prepared for imputation (not included in this repository)
+input_rds <- "../data/Full Production Stage Linear Imputation/buyout_data_forimputation.rds"
+
+# Fold predictions and summaries are written to / read from this folder
+kfold_dir <- "no public caps k-fold cross validation"
+
+output_docx <- "tables/ta4_kfold.docx"
+dir.create("tables", showWarnings = FALSE)
+
+# K-fold settings
+k          <- 10L
+m          <- 20L
+maxit      <- 15L
+seed       <- 2026L
+start_fold <- 1L
+```
+
+# Build imputation dataset
+
+```{r build-data, eval = run_kfold}
+build_imputation_data <- function(input_rds, checked_csv = NULL) {
+  buyout_data <- readRDS(input_rds)
+  setDT(buyout_data)
+
+  checked_path <- if (is.null(checked_csv)) {
+    file.path(dirname(input_rds), "PE_deals_checked.csv")
+  } else {
+    checked_csv
+  }
+  if (file.exists(checked_path)) {
+    checked <- fread(checked_path, na.strings = c("NA", ""))
+    buyout_data[
+      dealid %in% checked[public_target_or_public_division == "yes", dealid],
+      transfertype := "Public to PE"
+    ]
+  }
+
+  # Restrict the validation sample to deals dated before 2020.
+  buyout_data <- buyout_data[as.Date(dealdate) < as.Date("2020-01-01")]
+
+  # Prepare restricted dataset
+  m_data <- buyout_data[, .(
+    # ID
+    companyid, dealid, dealyear = as.integer(format(dealdate, "%Y")),
+    # Deal
+    transfertype,
+    dealsize_2023d, percentacquired, businessstatus,
+    addon, divisional, mbombi, # deal type flags
+    # Target
+    target_deal_count,
+    sector = hd_primaryindustrysector,
+    # Investor
+    investor_count, avg_investor_meddealsize, max_investor_dealcount,
+    max_investor_fundcount,
+    max_investor_fundsizeavg,
+    any_investor_pe, any_investor_otherfinance, any_investor_nonfinance, any_public_inv,
+    max_investor_age,
+    # Funds
+    fund_count, sum_fundsize, sum_fundsize_cat
+  )]
+
+  # Excluded: lbo_period, valuation_2023d, target_first_buyout_date, hd_primaryindustrygroup
+  # target_dealtype_count, target_dealtype_number, target_deal_number, max_fundsize
+
+  # Drop companies that remain or become publicly traded as a result of LBO:
+  m_data <- m_data[!(transfertype %chin% c("Private to public", "Public to public"))]
+  m_data[, transfertype := factor(transfertype)]
+  m_data[, investor_count := fifelse(investor_count == 0, NA_real_, investor_count)]
+
+  m_data[, sum_fundsize_cat := fct_collapse(
+    sum_fundsize_cat,
+    nofund = 0,
+    small = c(1, 2),
+    medium = 3,
+    large = c(4, 5)
+  )]
+
+  m_data[, log_dealsize_2023d := log(dealsize_2023d)]
+
+  m_data[, businessstatus := fct_collapse(
+    businessstatus,
+    revenue = c("Generating Revenue", "Generating Revenue/Not Profitable"),
+    profitable = c("Profitable"),
+    other = c(
+      "Bankruptcy: Admin/Reorg", "Bankruptcy: Liquidation", "Out of Business",
+      "Clinical Trials - General", "Clinical Trials - Phase 1",
+      "Clinical Trials - Phase 2", "Clinical Trials - Phase 3",
+      "Pre-Clinical Trials", "Product Development", "Product In Beta Test",
+      "Restart", "Startup", "Stealth"
+    )
+  )]
+
+  fcols <- c(
+    "any_investor_pe", "any_investor_otherfinance",
+    "any_investor_nonfinance", "any_public_inv",
+    "addon", "divisional", "mbombi"
+  )
+  m_data[, (fcols) := lapply(.SD, as.factor), .SDcols = fcols]
+
+  # Pre-processing: transform and scale variables
+  #
+  # All continuous and count variables are transformed BEFORE passing to mice,
+  # so that m_data contains only analysis-ready columns. No I() wrappers needed
+  # in the formula.
+
+  # -- 1a. Center and scale dealyear --
+  dy_mean <- mean(m_data$dealyear)
+  dy_sd <- sd(m_data$dealyear)
+  m_data[, dyear_s := (dealyear - dy_mean) / dy_sd]
+
+  # -- 1b. Log-transform counts with log1p --
+  m_data[, ln_target_deal_count := log1p(target_deal_count)]
+  m_data[, ln_investor_count := log1p(investor_count)]
+  m_data[, ln_fund_count := log1p(fund_count)]
+  m_data[, ln_max_inv_dealcount := log1p(max_investor_dealcount)]
+  m_data[, ln_max_inv_fundcount := log1p(max_investor_fundcount)]
+
+  # -- 1c. Log-transform dollar amounts --
+  m_data[, ln_avg_inv_meddealsize := log1p(avg_investor_meddealsize)]
+  m_data[, ln_max_inv_fundsizeavg := log1p(max_investor_fundsizeavg)]
+
+  # -- 1c2. Pre-compute squared term for ln_avg_inv_meddealsize --
+  m_data[, ln_avg_inv_meddealsize_sq := ln_avg_inv_meddealsize^2]
+
+  # -- 1d. Scale and square max_investor_age --
+  age_mean <- mean(m_data$max_investor_age, na.rm = TRUE)
+  age_sd <- sd(m_data$max_investor_age, na.rm = TRUE)
+  m_data[, inv_age_s := (max_investor_age - age_mean) / age_sd]
+  m_data[, inv_age_s2 := inv_age_s^2]
+
+  # -- 1e. log(percentacquired): 0 for full acquisitions, negative for partials --
+  m_data[, log_pctacq := log(percentacquired)]
+  m_data[is.na(log_pctacq), log_pctacq := 0]
+
+  # -- 1f. Quadratic time trend (pre-computed; no passive needed) --
+  m_data[, dyear_s2 := dyear_s^2]
+
+  # -- 1g. Drop raw versions of transformed variables --
+  # dealyear is retained as metadata for validation outputs, but excluded from
+  # the MICE predictor matrix below so it is not used as an imputation variable.
+  m_data[, c(
+    "max_investor_age", "percentacquired",
+    "target_deal_count", "investor_count", "fund_count",
+    "max_investor_dealcount", "max_investor_fundcount",
+    "avg_investor_meddealsize", "max_investor_fundsizeavg"
+  ) := NULL]
+
+  m_data
+}
+
+m_data <- build_imputation_data(input_rds)
+```
+
+# MICE specification
+
+```{r mice-spec, eval = run_kfold}
+build_mice_spec <- function(m_data) {
+  dealformula <- as.formula(
+    log_dealsize_2023d ~
+      # -- time trend (scaled + quadratic) --
+      dyear_s + dyear_s2 +
+      # -- percent acquired (log scale; 0 for full acquisitions) --
+      log_pctacq +
+      # -- investor characteristics --
+      inv_age_s + inv_age_s2 +
+      ln_max_inv_fundsizeavg +
+      # -- counts (all log-transformed) --
+      ln_target_deal_count + ln_investor_count + ln_fund_count +
+      ln_max_inv_dealcount + ln_max_inv_fundcount +
+      # -- binary/categorical --
+      any_investor_nonfinance +
+      addon + divisional + transfertype +
+      businessstatus + sector + sum_fundsize_cat +
+      # -- time interactions --
+      dyear_s:addon +
+      dyear_s:divisional +
+      dyear_s:transfertype +
+      dyear_s:ln_max_inv_fundsizeavg +
+      # -- count interactions --
+      ln_target_deal_count:ln_max_inv_dealcount +
+      # -- add-on interactions --
+      addon:sum_fundsize_cat +
+      addon:ln_max_inv_dealcount +
+      # -- deal-type interactions --
+      ln_max_inv_fundsizeavg:sum_fundsize_cat
+  )
+
+  fundsizeformula <- as.formula(
+    ln_max_inv_fundsizeavg ~
+      # -- main effects --
+      dyear_s + dyear_s2 +
+      inv_age_s + inv_age_s2 +
+      ln_target_deal_count + ln_investor_count + ln_fund_count +
+      ln_max_inv_dealcount + ln_max_inv_fundcount +
+      any_investor_pe + any_investor_otherfinance +
+      any_investor_nonfinance + any_public_inv +
+      addon + divisional + mbombi + transfertype +
+      businessstatus + sector + sum_fundsize_cat +
+      # -- forward-selected interactions --
+      ln_max_inv_dealcount:sum_fundsize_cat +
+      dyear_s:ln_max_inv_dealcount +
+      ln_investor_count:ln_max_inv_dealcount +
+      addon:sum_fundsize_cat +
+      inv_age_s:ln_investor_count +
+      dyear_s:ln_investor_count +
+      dyear_s:addon
+  )
+
+  init <- mice(
+    m_data,
+    maxit = 0,
+    defaultMethod = c("pmm", "pmm", "polyreg", "pmm"),
+    printFlag = FALSE
+  )
+
+  pred <- init$predictorMatrix
+  method <- init$method
+
+  # -- Exclude IDs, metadata, and constraint column from predictors --
+  pred[, c("dealid", "companyid", "dealyear", "sum_fundsize")] <- 0
+  method[c("dealid", "companyid", "dealyear", "sum_fundsize")] <- ""
+
+  # -- Exclude log_pctacq from predictor matrix for other variables --
+  # (near-constant: 99.9% = 0; useful only in the dealsize formula)
+  pred[, "log_pctacq"] <- 0
+  method["log_pctacq"] <- ""
+
+  # -- Passive: dealsize recomputed from log_dealsize each iteration --
+  method["dealsize_2023d"] <- "~I(exp(log_dealsize_2023d))"
+
+  # -- Passive: inv_age_s2 recomputed from inv_age_s each iteration --
+  method["inv_age_s2"] <- "~I(inv_age_s^2)"
+
+  # -- Passive: ln_avg_inv_meddealsize_sq recomputed each iteration --
+  method["ln_avg_inv_meddealsize_sq"] <- "~I(ln_avg_inv_meddealsize^2)"
+
+  # -- Break circularities --
+  pred[c("dealsize_2023d", "log_dealsize_2023d"),
+       c("dealsize_2023d", "log_dealsize_2023d")] <- 0
+  pred["inv_age_s2", "inv_age_s"] <- 0
+  pred["inv_age_s", "inv_age_s2"] <- 0
+  pred["ln_avg_inv_meddealsize_sq", "ln_avg_inv_meddealsize"] <- 0
+  pred["ln_avg_inv_meddealsize", "ln_avg_inv_meddealsize_sq"] <- 0
+
+  # -- Don't impute complete columns --
+  # (dyear_s2 is pre-computed and always complete; no passive needed)
+  complete_cols <- names(which(colSums(is.na(m_data)) == 0))
+  complete_cols <- setdiff(
+    complete_cols,
+    c("dealsize_2023d", "inv_age_s2", "ln_avg_inv_meddealsize_sq")
+  )
+  for (cc in complete_cols) {
+    if (method[cc] != "" && !startsWith(method[cc], "~")) {
+      method[cc] <- ""
+    }
+  }
+
+  # -- Enforce dealsize <= sum_fundsize / 2 where sum_fundsize is known --
+  # NO PUBLIC CAP variant: the cap is applied only to private-target deals;
+  # deals with publicly traded targets (transfertype == "Public to PE")
+  # are exempt from the cap.
+  post <- make.post(m_data)
+  post["log_dealsize_2023d"] <- "
+    sf_mis  <- data$sum_fundsize[!r[, j]]
+    tt_mis  <- data$transfertype[!r[, j]]
+    is_priv <- !is.na(tt_mis) & tt_mis != 'Public to PE'
+    have_sf <- !is.na(sf_mis) & is_priv
+    upper   <- log(sf_mis[have_sf] / 2)
+    imp[[j]][have_sf, i] <- pmin(imp[[j]][have_sf, i], upper)
+  "
+
+  # -- Custom formula for log_dealsize_2023d --
+  reinit <- mice(
+    m_data,
+    maxit = 0,
+    predictorMatrix = pred,
+    method = method,
+    post = post,
+    printFlag = FALSE
+  )
+  formulas <- reinit$formulas
+  formulas$log_dealsize_2023d <- dealformula
+  formulas$ln_max_inv_fundsizeavg <- fundsizeformula
+
+  # -- Visit sequence --
+  # inv_age_s2 (passive) right after inv_age_s;
+  # log_dealsize_2023d second to last; dealsize_2023d last (passive)
+  active_vars <- names(method[method != ""])
+  auto_vars <- setdiff(
+    active_vars,
+    c("inv_age_s2", "ln_avg_inv_meddealsize_sq", "log_dealsize_2023d", "dealsize_2023d")
+  )
+
+  # inv_age_s2 (passive) right after inv_age_s
+  pos <- which(auto_vars == "inv_age_s")
+  if (length(pos)) {
+    auto_vars <- append(auto_vars, "inv_age_s2", after = pos)
+  }
+
+  # ln_avg_inv_meddealsize_sq (passive) right after ln_avg_inv_meddealsize
+  pos2 <- which(auto_vars == "ln_avg_inv_meddealsize")
+  if (length(pos2)) {
+    auto_vars <- append(auto_vars, "ln_avg_inv_meddealsize_sq", after = pos2)
+  }
+
+  visit_seq <- c(auto_vars, "log_dealsize_2023d", "dealsize_2023d")
+
+  list(
+    predictorMatrix = pred,
+    method = method,
+    post = post,
+    formulas = formulas,
+    visitSequence = visit_seq
+  )
+}
+
+spec <- build_mice_spec(m_data)
+```
+
+# K-fold functions
+
+```{r kfold-functions, eval = run_kfold}
+make_folds <- function(n, k, seed) {
+  set.seed(seed)
+  sample(rep(seq_len(k), length.out = n))
+}
+
+score_predictions <- function(dt) {
+  dt <- copy(dt)
+
+  dt[, `:=`(
+    error_log = pred_log_dealsize_2023d - true_log_dealsize_2023d,
+    abs_error_log = abs(pred_log_dealsize_2023d - true_log_dealsize_2023d),
+    squared_error_log = (pred_log_dealsize_2023d - true_log_dealsize_2023d)^2,
+    error_level = pred_dealsize_2023d - true_dealsize_2023d,
+    pct_error = (pred_dealsize_2023d - true_dealsize_2023d) / true_dealsize_2023d,
+    ape = abs(pred_dealsize_2023d - true_dealsize_2023d) / true_dealsize_2023d
+  )]
+
+  dt[, .(
+    n = .N,
+    rmse_log = sqrt(mean(squared_error_log)),
+    mae_log = mean(abs_error_log),
+    bias_log = mean(error_log),
+    rmse_level = sqrt(mean(error_level^2)),
+    mae_level = mean(abs(error_level)),
+    mean_error_level = mean(error_level),
+    median_error_level = median(error_level),
+    mean_pct_error = mean(pct_error),
+    median_pct_error = median(pct_error),
+    mape = mean(ape),
+    median_ape = median(ape),
+    cor_log = cor(pred_log_dealsize_2023d, true_log_dealsize_2023d),
+    cor_level = cor(pred_dealsize_2023d, true_dealsize_2023d)
+  )]
+}
+
+run_fold <- function(m_data, spec, holdout_idx, fold_id, m = 20, maxit = 15, seed = 2026) {
+  fold_data <- copy(m_data)
+  truth <- fold_data[holdout_idx, .(
+    .id = holdout_idx,
+    dealid,
+    dealyear,
+    fold = fold_id,
+    transfertype,
+    true_dealsize_2023d = dealsize_2023d,
+    true_log_dealsize_2023d = log_dealsize_2023d
+  )]
+
+  fold_data[holdout_idx, c("dealsize_2023d", "log_dealsize_2023d") := .(NA_real_, NA_real_)]
+
+  imp <- mice(
+    fold_data,
+    m = m,
+    maxit = maxit,
+    visitSequence = spec$visitSequence,
+    predictorMatrix = spec$predictorMatrix,
+    method = spec$method,
+    post = spec$post,
+    formulas = spec$formulas,
+    seed = seed + fold_id,
+    printFlag = FALSE
+  )
+
+  comp <- complete(imp, "long", include = FALSE)
+  comp <- as.data.table(comp)
+
+  pred <- comp[.id %in% holdout_idx, .(
+    pred_log_dealsize_2023d = mean(log_dealsize_2023d, na.rm = TRUE),
+    pred_dealsize_2023d = mean(dealsize_2023d, na.rm = TRUE)
+  ), by = .id]
+
+  result <- pred[truth, on = ".id"]
+  result[]
+}
+
+write_yearly_dealsize_totals <- function(predictions, output_dir) {
+  if (!nrow(predictions)) {
+    return(invisible(NULL))
+  }
+
+  yearly_totals <- predictions[, .(
+    n = .N,
+    sum_pred_dealsize_2023d = sum(pred_dealsize_2023d, na.rm = TRUE),
+    sum_true_dealsize_2023d = sum(true_dealsize_2023d, na.rm = TRUE),
+    difference_pred_minus_true_2023d = sum(pred_dealsize_2023d, na.rm = TRUE) -
+      sum(true_dealsize_2023d, na.rm = TRUE)
+  ), by = dealyear]
+  setorder(yearly_totals, dealyear)
+
+  fwrite(
+    yearly_totals,
+    file.path(output_dir, "cv_mice_dealsize_yearly_predicted_actual_totals.csv")
+  )
+  invisible(yearly_totals)
+}
+
+write_fold_outputs <- function(predictions, output_dir, k, m, maxit, seed, n_observed, hidden_per_fold) {
+  if (!nrow(predictions)) {
+    return(invisible(NULL))
+  }
+
+  dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+  setorder(predictions, fold, .id)
+
+  fold_summary <- predictions[, score_predictions(.SD), by = fold]
+  transfertype_summary <- predictions[, score_predictions(.SD), by = transfertype]
+  fold_transfertype_summary <- predictions[, score_predictions(.SD), by = .(fold, transfertype)]
+  overall_summary <- score_predictions(copy(predictions))
+  overall_summary[, `:=`(
+    k = k,
+    m = m,
+    maxit = maxit,
+    seed = seed,
+    n_observed = n_observed,
+    mean_hidden_per_fold = hidden_per_fold,
+    completed_folds = uniqueN(predictions$fold)
+  )]
+
+  fwrite(predictions, file.path(output_dir, "cv_mice_dealsize_predictions.csv"))
+  fwrite(fold_summary, file.path(output_dir, "cv_mice_dealsize_fold_summary.csv"))
+  fwrite(transfertype_summary, file.path(output_dir, "cv_mice_dealsize_transfertype_summary.csv"))
+  fwrite(fold_transfertype_summary, file.path(output_dir, "cv_mice_dealsize_fold_transfertype_summary.csv"))
+  fwrite(overall_summary, file.path(output_dir, "cv_mice_dealsize_summary.csv"))
+  write_yearly_dealsize_totals(predictions, output_dir)
+
+  invisible(NULL)
+}
+```
+
+# Run k-fold cross validation
+
+Each fold hides about 10 percent of the known deal sizes, imputes them with the
+MICE model, and saves the predictions. Folds already present in
+`cv_mice_dealsize_predictions.csv` are skipped, so an interrupted run can be
+resumed by rerunning this chunk (or by setting `start_fold`).
+
+```{r run-kfold, eval = run_kfold}
+dir.create(kfold_dir, recursive = TRUE, showWarnings = FALSE)
+
+observed_idx <- which(!is.na(m_data$dealsize_2023d))
+n_observed <- length(observed_idx)
+if (n_observed < k) {
+  stop("Not enough observed dealsize values for the requested number of folds.")
+}
+
+fold_ids <- make_folds(n_observed, k = k, seed = seed)
+hidden_per_fold <- round(n_observed / k)
+cumulative_predictions_path <- file.path(kfold_dir, "cv_mice_dealsize_predictions.csv")
+
+if (file.exists(cumulative_predictions_path)) {
+  predictions <- fread(cumulative_predictions_path)
+  incompatible_predictions <- nrow(predictions) &&
+    (!"dealyear" %in% names(predictions) || any(predictions$dealyear >= 2020, na.rm = TRUE))
+  if (incompatible_predictions) {
+    warning(
+      "Existing cumulative predictions are incompatible with the pre-2020 validation sample ",
+      "or are missing dealyear metadata. Ignoring that file for this run."
+    )
+    predictions <- data.table()
+  }
+} else {
+  predictions <- data.table()
+}
+
+message("Observed dealsizes available for validation: ", format(n_observed, big.mark = ","))
+
+for (fold in seq.int(start_fold, k)) {
+  if (nrow(predictions) && fold %in% predictions$fold) {
+    message("Fold ", fold, "/", k, " already present in cumulative predictions. Skipping.")
+    next
+  }
+
+  holdout_idx <- observed_idx[fold_ids == fold]
+  message("Fold ", fold, "/", k, ": masking ", length(holdout_idx), " observed values.")
+  fold_result <- run_fold(
+    m_data = m_data,
+    spec = spec,
+    holdout_idx = holdout_idx,
+    fold_id = fold,
+    m = m,
+    maxit = maxit,
+    seed = seed
+  )
+  predictions <- rbindlist(list(predictions, fold_result), use.names = TRUE, fill = TRUE)
+  setorder(predictions, fold, .id)
+
+  fwrite(fold_result, file.path(kfold_dir, sprintf("cv_mice_dealsize_predictions_fold_%02d.csv", fold)))
+  write_fold_outputs(
+    predictions = predictions,
+    output_dir = kfold_dir,
+    k = k,
+    m = m,
+    maxit = maxit,
+    seed = seed,
+    n_observed = n_observed,
+    hidden_per_fold = hidden_per_fold
+  )
+}
+```
+
+# Table A4
+
+Table A4 is built from the cumulative fold predictions, comparing imputed deal
+sizes to the known deal sizes they replaced, overall and by deal type.
+
+```{r table-a4-metrics}
+predictions <- fread(file.path(kfold_dir, "cv_mice_dealsize_predictions.csv"))
+
+score_publication_predictions <- function(dt) {
+  dt <- copy(dt)
+  dt[, `:=`(
+    error_log = pred_log_dealsize_2023d - true_log_dealsize_2023d,
+    abs_error_log = abs(pred_log_dealsize_2023d - true_log_dealsize_2023d),
+    squared_error_log = (pred_log_dealsize_2023d - true_log_dealsize_2023d)^2,
+    error_level = pred_dealsize_2023d - true_dealsize_2023d
+  )]
+
+  dt[, .(
+    n = .N,
+    rmse_log = sqrt(mean(squared_error_log, na.rm = TRUE)),
+    mae_log = mean(abs_error_log, na.rm = TRUE),
+    bias_log = mean(error_log, na.rm = TRUE),
+    rmse_level_millions = sqrt(mean(error_level^2, na.rm = TRUE)),
+    mae_level_millions = mean(abs(error_level), na.rm = TRUE),
+    mean_error_level_millions = mean(error_level, na.rm = TRUE),
+    median_error_level_millions = median(error_level, na.rm = TRUE),
+    cor_log = cor(pred_log_dealsize_2023d, true_log_dealsize_2023d, use = "complete.obs"),
+    cor_level = cor(pred_dealsize_2023d, true_dealsize_2023d, use = "complete.obs"),
+    sum_pred_dealsize_2023d_trillions = sum(pred_dealsize_2023d, na.rm = TRUE) / 1e6,
+    sum_true_dealsize_2023d_trillions = sum(true_dealsize_2023d, na.rm = TRUE) / 1e6,
+    pred_to_true_sum_ratio = sum(pred_dealsize_2023d, na.rm = TRUE) /
+      sum(true_dealsize_2023d, na.rm = TRUE)
+  )]
+}
+
+overall <- score_publication_predictions(predictions)
+overall[, deal_type := "All deals"]
+by_type <- predictions[, score_publication_predictions(.SD), by = .(deal_type = transfertype)]
+setorder(by_type, deal_type)
+
+metrics <- rbindlist(list(overall, by_type), use.names = TRUE)
+metrics[, deal_type := gsub(" to ", "-to-", deal_type)]  # e.g. "Private to PE" -> "Private-to-PE"
+setcolorder(metrics, "deal_type")
+```
+
+```{r table-a4-format}
+format_num <- function(x, digits) formatC(x, format = "f", digits = digits, big.mark = ",")
+format_dollars <- function(x, unit, digits = 1) {
+  paste0(ifelse(x < 0, "-$", "$"), formatC(abs(x), format = "f", digits = digits, big.mark = ","), unit)
+}
+
+style_panel <- function(ft) {
+  ft |>
+    font(fontname = "Times New Roman", part = "all") |>
+    fontsize(size = 10, part = "all") |>
+    bold(part = "header") |>
+    align(j = -1, align = "center", part = "all") |>
+    align(j = 1, align = "left", part = "all") |>
+    # Booktabs-style horizontal rules only (no vertical borders)
+    border_remove() |>
+    hline_top(part = "header", border = fp_border(width = 1.5)) |>
+    hline_bottom(part = "header", border = fp_border(width = 0.75)) |>
+    hline_bottom(part = "body", border = fp_border(width = 1.5)) |>
+    autofit()
+}
+
+panel_a <- metrics[, .(
+  `Deal Type` = deal_type,
+  `Known Size N` = format_num(n, 0),
+  `Sum Predicted` = format_dollars(sum_pred_dealsize_2023d_trillions, "T"),
+  `Sum Actual` = format_dollars(sum_true_dealsize_2023d_trillions, "T"),
+  `Predicted / Actual` = format_num(pred_to_true_sum_ratio, 3)
+)] |>
+  flextable() |>
+  set_caption("Table A4: Statistics for K-Fold Cross Validation of Deal Size Imputation Model") |>
+  add_header_lines("Panel A. Aggregate Deal-Size Totals") |>
+  style_panel()
+
+panel_b <- metrics[, .(
+  `Deal Type` = deal_type,
+  `Log RMSE` = format_num(rmse_log, 3),
+  `Log MAE` = format_num(mae_log, 3),
+  `Log Bias` = format_num(bias_log, 3),
+  `Log Correlation` = format_num(cor_log, 3)
+)] |>
+  flextable() |>
+  add_header_lines("Panel B. Log-Scale Accuracy Metrics") |>
+  style_panel()
+
+panel_c <- metrics[, .(
+  `Deal Type` = deal_type,
+  `Mean Error` = format_dollars(mean_error_level_millions, "M"),
+  `Median Error` = format_dollars(median_error_level_millions, "M"),
+  `Dollar RMSE` = format_dollars(rmse_level_millions, "M"),
+  `Dollar MAE` = format_dollars(mae_level_millions, "M"),
+  `Dollar Correlation` = format_num(cor_level, 3)
+)] |>
+  flextable() |>
+  add_header_lines("Panel C. Unlogged Accuracy Metrics") |>
+  add_footer_lines("Note: Deal-size values are measured in millions of 2023 dollars. Aggregate sums are displayed in trillions.") |>
+  style_panel()
+```
+
+```{r table-a4}
+invisible(save_as_image(panel_a, "tables/ta4a_kfold_totals.png", res = 200))
+invisible(save_as_image(panel_b, "tables/ta4b_kfold_log_accuracy.png", res = 200))
+invisible(save_as_image(panel_c, "tables/ta4c_kfold_dollar_accuracy.png", res = 200))
+knitr::include_graphics(c("tables/ta4a_kfold_totals.png", "tables/ta4b_kfold_log_accuracy.png", "tables/ta4c_kfold_dollar_accuracy.png"))
+```
+
+```{r export}
+save_as_docx(
+  panel_a, panel_b, panel_c,
+  path = output_docx,
+  pr_section = prop_section(page_size = page_size(orient = "portrait"), type = "continuous")
+)
+```

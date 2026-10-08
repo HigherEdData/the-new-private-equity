@@ -1,0 +1,197 @@
+---
+title: "Figure 1"
+output:
+  github_document:
+    html_preview: false
+---
+
+```{r setup, include=FALSE}
+library(scales)
+library(blscrapeR)
+library(gt)
+library(tidyverse)
+library(data.table)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# import data
+
+```{r}
+path <- "PitchBook_Pivot_US_Funds.csv"
+
+# --- Import + basic cleaning ---
+funds <- read_csv(path, show_col_types = FALSE) %>%
+  dplyr::select(1:12) %>%
+  filter(!(`Closed Year` %in% c("2024", "2025"))) %>%
+  mutate(across(everything(), as.character))
+
+value_cols <- names(funds)[4:ncol(funds)]
+
+clean_num <- function(x) {
+  x <- str_replace_all(x, "[^0-9.\\-]", "")
+  x[x %in% c("", "-")] <- NA_character_
+  as.numeric(x)
+}
+
+funds <- funds %>%
+  mutate(across(all_of(value_cols), clean_num))
+
+data1 <- funds %>%
+  filter(
+    `Fund Category` == "All",
+    `Fund Type` == "All",
+    `Closed Year` != "All",
+    `Closed Year` != "Other / Unknown"
+  ) %>%
+  select(-any_of(c("Fund Type", "Fund Category", "Fund Size Count"))) %>%
+  mutate(`Closed Year` = as.integer(`Closed Year`)) %>%
+  arrange(`Closed Year`)
+```
+
+
+```{r}
+# --- CPI adjustment to 2023 dollars (January CPI-U index) ---
+data("cu_main", package = "blscrapeR")
+
+cpi_jan <- cu_main %>%
+  mutate(date = as.Date(date)) %>%
+  filter(format(date, "%m") == "01") %>%
+  transmute(
+    year = as.integer(format(date, "%Y")),
+    cpi = as.numeric(value)
+  )
+
+cpi_2023 <- cpi_jan %>% filter(year == 2023) %>% pull(cpi)
+```
+
+# Figure 1
+
+```{r}
+# --- Build data2 ---
+todrop <- c(
+  "Fund Size Mean", "Fund Size Median", "Fund Size Max",
+  "Fund Size Min", "Fund Size 25th", "Fund Size 75th"
+)
+value_cols <- c("Fund Count", "Fund Size Sum", "Fund Size Count")
+
+data2 <- funds %>%
+  filter(`Fund Category` != "All", `Closed Year` != "All") %>%
+  mutate(`Closed Year` = as.integer(`Closed Year`)) %>%
+  filter(`Closed Year` >= 1980) %>%
+  arrange(`Closed Year`, `Fund Category`, `Fund Type`) %>%
+  select(-any_of(todrop))
+
+# Keep only the "All" rollup for these categories (drop their subtypes)
+data2 <- data2 %>%
+  filter((`Fund Category` != "Venture Capital") | (`Fund Type` == "All")) %>%
+  filter((`Fund Category` != "Debt")            | (`Fund Type` == "All")) %>%
+  filter((`Fund Category` != "Real Assets")     | (`Fund Type` == "All"))
+
+# Drop the standalone "Other" category entirely
+data2 <- data2 %>%
+  filter(`Fund Category` != "Other")
+
+# Merge only the two minor PE subtypes into "Other PE Funds"
+other_pe <- c("Diversified Private Equity", "Restructuring/Turnaround")
+
+data2 <- data2 %>%
+  mutate(`Fund Type` = if_else(`Fund Type` %in% other_pe, "Other PE Funds", `Fund Type`)) %>%
+  mutate(across(all_of(value_cols), ~ replace_na(.x, 0))) %>%
+  group_by(`Closed Year`, `Fund Category`, `Fund Type`) %>%
+  summarise(across(all_of(value_cols), ~ sum(.x, na.rm = TRUE)), .groups = "drop") %>%
+  filter(!(`Fund Category` == "Private Equity" & `Fund Type` == "All")) %>%
+  mutate(
+    category = if_else(`Fund Category` == "Private Equity", `Fund Type`, `Fund Category`)
+  ) %>%
+  select(`Closed Year`, category, all_of(value_cols))
+
+# Final relabeling — no "Other Funds" bucket
+replacements <- c(
+  "Debt"             = "Private Debt",
+  "Buyout"           = "Buyout",
+  "Growth/Expansion" = "PE Growth",
+  "Other PE Funds"   = "Other PE",
+  "Venture Capital"  = "Venture Capital",
+  "Real Assets"      = "Real Assets"
+)
+
+data2 <- data2 %>%
+  mutate(category = recode(category, !!!replacements))
+```
+
+```{r}
+# --- CPI-adjust Fund Size Sum to 2023 dollars, then 3-year centered rolling mean by category ---
+plot2_df <- data2 %>%
+  left_join(cpi_jan, by = c("Closed Year" = "year")) %>%
+  mutate(
+    cpi_factor = cpi_2023 / cpi,
+    fund_size_sum_2023 = `Fund Size Sum` * cpi_factor
+  ) %>%
+  select(`Closed Year`, category, fund_size_sum_2023) %>%
+  group_by(category) %>%
+  arrange(`Closed Year`, .by_group = TRUE) %>%
+  mutate(
+    roll3_fund_size_sum_2023 = rowMeans(
+      #cbind(lag(fund_size_sum_2023), fund_size_sum_2023, lead(fund_size_sum_2023)),
+      cbind(lag(fund_size_sum_2023), lead(fund_size_sum_2023), fund_size_sum_2023),
+      na.rm = TRUE
+    )
+  ) %>%
+  ungroup() %>%
+  filter(`Closed Year` >= 1985, `Closed Year` <= 2020)
+
+# --- Order legend to match the final (most recent) line ordering ---
+cat_order <- plot2_df %>%
+  group_by(category) %>%
+  slice_max(`Closed Year`, n = 1, with_ties = FALSE) %>%   # last point per category
+  ungroup() %>%
+  arrange(desc(roll3_fund_size_sum_2023)) %>%             # top-to-bottom at the end
+  pull(category)
+
+plot2_df <- plot2_df %>%
+  mutate(category = factor(category, levels = cat_order))
+
+p2 <- ggplot(plot2_df, aes(x = `Closed Year`, y = roll3_fund_size_sum_2023,
+                            color = category, linetype = category, shape = category)) +
+  geom_line() +
+  geom_point() +
+  labs(
+    title = "",
+    x = NULL,
+    y = "Amount raised (2023 USD)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.caption   = element_text(hjust = 0.5),
+    legend.position = "bottom",
+    legend.title   = element_blank()
+  ) +
+  scale_y_continuous(
+    labels = scales::label_currency(
+      scale = 1e6,
+      scale_cut = scales::cut_short_scale()
+    )
+  ) +
+  scale_linetype_manual(
+    values = c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash")[seq_along(unique(plot2_df$category))]
+  ) +
+  scale_shape_manual(
+    values = c(16, 17, 15, 18, 8, 3)[seq_along(unique(plot2_df$category))]
+  ) +
+  guides(
+    color    = guide_legend(nrow = 2, byrow = TRUE),
+    linetype = guide_legend(nrow = 2, byrow = TRUE),
+    shape    = guide_legend(nrow = 2, byrow = TRUE)
+  )+
+  scale_x_continuous(
+     breaks = c(1985, 1990, 1995, 2000, 2005, 2010, 2015, 2020)
+    )+
+  theme(legend.text = element_text(size = 11),
+        panel.grid.minor = element_blank())
+
+ggsave("figures/f1_funds_raised.png", p2 + scale_color_brewer(palette = "Dark2"),
+       width = 7.5, height = 5, units = "in", dpi = 320)
+knitr::include_graphics("figures/f1_funds_raised.png")
+```
+

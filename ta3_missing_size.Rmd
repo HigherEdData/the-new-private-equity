@@ -1,0 +1,114 @@
+---
+title: "Table A3: Missing Deal Size Percentages by Deal Type and Time Period"
+output:
+  github_document:
+    html_preview: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(dplyr)      # data manipulation verbs
+library(tidyr)      # pivoting to wide table layout
+library(lubridate)  # date handling
+library(flextable)  # publication-quality tables with Word export
+library(officer)    # page setup for the .docx output
+
+input_rds <- "../data/No Public Cap Full Production Stage Linear Imputation/buyout_data_forimputation.rds"
+output_docx <- "tables/ta3_missing_size.docx"
+```
+
+# Load and prepare data
+
+```{r load}
+buyout_data <- readRDS(input_rds)
+# IDate columns saved with double storage are rejected by newer vctrs; convert them to Date
+for (col in names(buyout_data)[vapply(buyout_data, inherits, logical(1), "IDate")]) {
+  buyout_data[[col]] <- as.Date(as.numeric(buyout_data[[col]]))
+}
+
+deals <- buyout_data %>%
+  as_tibble() %>%
+  mutate(
+    # dealdate carries IDate class with double storage (dplyr round-trip
+    # artifact); rebuild as a plain Date before extracting the year
+    dealdate = as.Date(as.numeric(dealdate)),
+    dealyear = year(dealdate),
+    size_missing = is.na(dealsize_2023d),
+    # Deals with missing deal type are treated as Private to PE
+    transfertype = coalesce(transfertype, "Private to PE")
+  ) %>%
+  # Drop deals where the target remains or becomes publicly traded
+  filter(!transfertype %in% c("Public to public", "Private to public")) %>%
+  # Restrict to the 1985-2019 window and assign 5-year periods
+  filter(dealyear >= 1985, dealyear <= 2019) %>%
+  mutate(
+    period = paste(
+      floor((dealyear - 1985) / 5) * 5 + 1985,
+      floor((dealyear - 1985) / 5) * 5 + 1989,
+      sep = "-"
+    )
+  )
+```
+
+# Percent missing by deal type and period
+
+```{r missing-table}
+# Percent missing within each period x deal type cell
+by_type <- deals %>%
+  group_by(period, transfertype) %>%
+  summarise(pct_missing = 100 * mean(size_missing), .groups = "drop")
+
+# Percent missing across all deal types within each period
+all_types <- deals %>%
+  group_by(period) %>%
+  summarise(pct_missing = 100 * mean(size_missing), .groups = "drop") %>%
+  mutate(transfertype = "All deals")
+
+missing_wide <- bind_rows(by_type, all_types) %>%
+  pivot_wider(names_from = transfertype, values_from = pct_missing) %>%
+  arrange(period) %>%
+  relocate(period, `Public to PE`,
+           sort(setdiff(names(.), c("period", "Public to PE", "All deals"))),
+           `All deals`) %>%
+  rename(Period = period)
+
+missing_wide
+```
+
+# Formatted table
+
+```{r flextable}
+ta3 <- missing_wide %>%
+  flextable() %>%
+  colformat_double(digits = 1) %>%
+  set_caption("Table A3: Missing Deal Size Percentages by Deal Type and Time Period") %>%
+  add_footer_lines("Note: Cells report the percentage of deals with missing transaction size (2023 dollars). Source: PitchBook buyout data.") %>%
+  font(fontname = "Times New Roman", part = "all") %>%
+  fontsize(size = 10, part = "all") %>%
+  bold(part = "header") %>%
+  align(j = -1, align = "center", part = "all") %>%
+  align(j = 1, align = "left", part = "all") %>%
+  # Booktabs-style horizontal rules only (no vertical borders)
+  border_remove() %>%
+  hline_top(part = "header", border = fp_border(width = 1.5)) %>%
+  hline_bottom(part = "header", border = fp_border(width = 0.75)) %>%
+  hline_bottom(part = "body", border = fp_border(width = 1.5)) %>%
+  autofit()
+
+invisible(save_as_image(ta3, "tables/ta3_missing_size.png", res = 200))
+knitr::include_graphics("tables/ta3_missing_size.png")
+```
+
+# Export to Word
+
+```{r export}
+save_as_docx(
+  ta3,
+  path = output_docx,
+  pr_section = prop_section(
+    page_size = page_size(orient = "landscape"),
+    type = "continuous"
+  )
+)
+```
