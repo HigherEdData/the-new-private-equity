@@ -7,10 +7,10 @@ Summary: We assembled deal-level data from PitchBook on 56,974 buyouts and 21,36
 **Data**
   - PitchBook US Buyout and Exit Deals
   - PitchBook US Private Funds
-  - Federal Reserve
-  - SEC
-  - Compustat
-  - LSEG (previously Refinitiv)
+  - Federal Reserve Financial Accounts of the United States: Nonfinancial Corporate Net Worth at Historical Cost (Table B.103) and Nonfinancial Noncorporate Net Worth (Table B.104)
+  - SEC Form PF Private Fund Statistics (Gross Assets of Private Equity and Venture Capital Funds)
+  - Compustat Fundamentals Annual (Stockholders' Equity, Variable SEQ)
+  - LSEG (previously Refinitiv) US M&A Deals
 
 **Abstract**
 
