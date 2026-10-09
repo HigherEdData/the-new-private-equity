@@ -2,6 +2,8 @@
 
 ## By Charlie Eaton, Albina Gibadullina, Adam Goldstein, and Marie-Lou Laprise
 
+*Note: AI coding assistants (Claude Code and OpenAI Codex) were used to edit or write some of the scripts in this replication package and to draft this README following the Higher Education DataHub's repository conventions. Generative AI was not used to draft the text of the paper or its appendix.*
+
 Summary: We assembled deal-level data from PitchBook on 56,974 buyouts and 21,363 exits from 1985 to 2019, augmented with derived deal type classifications and deal size imputations, to provide a descriptive anatomy of private equity's shifting strategies and ownership patterns in the US economy.
 
 **Data**
