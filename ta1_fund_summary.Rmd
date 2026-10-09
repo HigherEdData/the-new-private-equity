@@ -1,5 +1,6 @@
 ---
 title: "Table Appendix 1"
+knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
 output:
   github_document:
     html_preview: false
@@ -158,7 +159,7 @@ fund_gt
 
 gtsave(fund_gt, "tables/ta1a_fund_summary.docx")
 gtsave(fund_gt, "tables/ta1a_fund_summary.png", zoom = 2, expand = 5, vwidth = 8 * 90 + 300)  # 2× DPI
-knitr::include_graphics("tables/ta1a_fund_summary.png")
+knitr::include_graphics("../tables/ta1a_fund_summary.png", error = FALSE)
 ```
 
 
@@ -393,7 +394,7 @@ fund_table <- stat_rows %>%
 # --- 7. Save as image ---
 gtsave(fund_table, "tables/ta1b_fund_participation.docx")
 gtsave(fund_table, "tables/ta1b_fund_participation.png", vwidth = 1600, expand = 10)
-knitr::include_graphics("tables/ta1b_fund_participation.png")
+knitr::include_graphics("../tables/ta1b_fund_participation.png", error = FALSE)
 
 #Note: LBO deal counts are deduplicated by dealid: a buyout with multiple participating funds is counted once per fund type. Because a single deal can involve funds from more than one type, '% of total LBO deal count does not sum to 100%. Volume is split across participating funds, so % of known LBO deal volume' does sum to 100%.
 ```

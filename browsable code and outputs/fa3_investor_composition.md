@@ -1,19 +1,14 @@
----
-title: "FigureA3"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
+FigureA3
+================
 
-```{r message = FALSE, warning = FALSE}
+``` r
 library(tidyverse)
 library(data.table)
 ```
 
-
 Load imputed LBO data + info on investors
-```{r}
+
+``` r
 companies <- fread("allcompanies.csv")
 deals_investors <- fread("alldealswithinvestors.csv")
 imp_obj <- readRDS("imputed_data_nopubliccap.Rds")
@@ -57,10 +52,9 @@ buyout_deals_imputed <- buyout_deals_imputed %>%
   mutate(known_deal_size = ifelse(!is.na(dealsize_2023d), "known", "imputed"))
 ```
 
-
-
 Figure Appendix 3: Investors in LBO deals
-```{r}
+
+``` r
 deals_info <- buyout_deals_imputed %>% 
   select(dealid, dealsize_2023d_all, transfertype)
 
@@ -130,7 +124,17 @@ investor_composition <- deals_investors_buyouts %>%
   rowwise() %>% 
   mutate(roll_3yr = mean(c(investment_share, inv_share_lag_1, inv_share_lead_1), na.rm = TRUE),
          roll_5yr = mean(c(investment_share, inv_share_lag_1, inv_share_lead_1, inv_share_lag_2, inv_share_lead_2), na.rm = TRUE)) 
+```
 
+    ## `summarise()` has regrouped the output.
+    ## ℹ Summaries were computed grouped by ml_dealyear, investor_type_updated, and
+    ##   investment_total.
+    ## ℹ Output is grouped by ml_dealyear and investor_type_updated.
+    ## ℹ Use `summarise(.groups = "drop_last")` to silence this message.
+    ## ℹ Use `summarise(.by = c(ml_dealyear, investor_type_updated,
+    ##   investment_total))` for per-operation grouping (`?dplyr::dplyr_by`) instead.
+
+``` r
 # Based on $ investment value
 stacked_labels <- data.frame(
   labels = c("Non-US investors", "Individuals", "Nonfinance", "Other finance", 
@@ -157,7 +161,17 @@ investor_composition_ <- investor_composition %>%
         title = element_text(size = 16),
         axis.text.x = element_text(size = 15),
         axis.text.y = element_text(size = 15))
-  
+```
+
+    ## Warning: Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
+    ## ℹ Please use `linewidth` instead.
+    ## This warning is displayed once per session.
+    ## Call `lifecycle::last_lifecycle_warnings()` to see where this warning was
+    ## generated.
+
+``` r
 ggsave("figures/fa3_investor_composition.png", investor_composition_, height = 8, width = 11)
 knitr::include_graphics("../figures/fa3_investor_composition.png", error = FALSE)
 ```
+
+![](../figures/fa3_investor_composition.png)<!-- -->
