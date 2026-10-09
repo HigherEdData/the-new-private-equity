@@ -402,7 +402,6 @@ lbo_gt <- style_lbo_table(
   subtitle = "Counts, coverage rates, and deal-value aggregates by deal windows, in 2023 dollars",
   ci_label = "95% CI"
 )
-lbo_gt
 
 ```
 
@@ -524,7 +523,6 @@ lbo_gt <- style_lbo_table_period_cols(
   ci_label = "95% CI"
 )
 
-lbo_gt
 ```
 
 

@@ -155,7 +155,6 @@ fund_gt <- funds |>
     heading.subtitle.font.size = px(14),
     data_row.padding           = px(6)
   )
-fund_gt
 
 gtsave(fund_gt, "tables/ta1a_fund_summary.docx")
 gtsave(fund_gt, "tables/ta1a_fund_summary.png", zoom = 2, expand = 5, vwidth = 8 * 90 + 300)  # 2× DPI
