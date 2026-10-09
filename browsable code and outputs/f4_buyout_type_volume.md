@@ -1,21 +1,15 @@
----
-title: "Figure 4"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
+Figure 4
+================
 
-```{r message = FALSE, warning = FALSE}
+``` r
 library(tidyverse)
 library(data.table)
 library(slider)
 ```
 
-
-
 Figure 4 - imputed and known with ribbons
-```{r}
+
+``` r
 # ---- 0. Load imputations ------------------------
 imp     <- readRDS("imputed_data_nopubliccap.Rds")
 datlist <- miceadds::mids2datlist(imp)
@@ -120,15 +114,24 @@ p6 <- ggplot(plot_dt, aes(x = dealyear, y = share,
         panel.background = element_rect(fill = "white", colour = NA),
         plot.background  = element_rect(fill = "white", colour = NA),
         panel.grid.minor = element_blank())
+```
 
+    ## Warning: Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
+    ## ℹ Please use `linewidth` instead.
+    ## This warning is displayed once per session.
+    ## Call `lifecycle::last_lifecycle_warnings()` to see where this warning was
+    ## generated.
+
+``` r
 ggsave("figures/f4_buyout_type_volume_imputed.png", p6, height = 6, width = 10)
 knitr::include_graphics("../figures/f4_buyout_type_volume_imputed.png", error = FALSE)
 ```
 
-
+![](../figures/f4_buyout_type_volume_imputed.png)<!-- -->
 
 Figure 4 - known deal volume only
-```{r}
+
+``` r
 imp_obj <- readRDS("imputed_data_nopubliccap.Rds")
 
 # Original data (with NAs)
@@ -241,5 +244,16 @@ df <- buyout_deals_imputed %>%
   
   
 ggsave("figures/f4_buyout_type_volume_known.png", df, height = 6, width = 10)
+```
+
+    ## Warning: Removed 4 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
+    ## Warning: Removed 4 rows containing missing values or values outside the scale range
+    ## (`geom_point()`).
+
+``` r
 knitr::include_graphics("../figures/f4_buyout_type_volume_known.png", error = FALSE)
 ```
+
+![](../figures/f4_buyout_type_volume_known.png)<!-- -->

@@ -22,4 +22,4 @@ If you click on the link for a notebook for any given table/figure in the reposi
 
 The following is Figure 1 from the paper, Funds Raised by US Private Funds by Fund Type (3-Year Rolling Average):
 
-![Figure 1: Funds Raised by US Private Funds by Fund Type (3-Year Rolling Average)](figures/f1_funds_raised_by_fund_type.png)
+![Figure 1: Funds Raised by US Private Funds by Fund Type (3-Year Rolling Average)](figures/f1_funds_raised.png)

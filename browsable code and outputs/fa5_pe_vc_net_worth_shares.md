@@ -1,26 +1,21 @@
----
-title: "Figure A5"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
+Figure A5
+================
 
-```{r message = FALSE, warning = FALSE}
+``` r
 library(tidyverse)
 library(readxl)
 library(data.table)
 ```
 
-
 Load files
-```{r}
+
+``` r
 data <- read.csv("d_net_worth_listed_firms.csv")
 ```
 
-
 Figure A5
-```{r}
+
+``` r
 combined <- data %>% 
   filter(Year>1996) %>% 
   select(Pitchbook_PE_VC_AUM, Pitchbook_PE_VC_Inv, SEC_GAV, ADV_PE_VC_All_Funds, ADV_PE_VC_Advised_by_RIA, Networth_Nonfinance_H, Networth_Nonfinance_Private_H, Networth_Corporate_Nonfinance_Private_H, Year) %>%
@@ -66,5 +61,13 @@ combined <- data %>%
        title = "Main Street reach of PE and VC in the United States")
 
 ggsave(plot = combined, "figures/fa5_pe_vc_net_worth_shares.png", height = 4, width = 7)
+```
+
+    ## Warning: Removed 32 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
+``` r
 knitr::include_graphics("../figures/fa5_pe_vc_net_worth_shares.png", error = FALSE)
 ```
+
+![](../figures/fa5_pe_vc_net_worth_shares.png)<!-- -->

@@ -1,0 +1,18 @@
+# macOS / R session files
+.DS_Store
+Icon?
+.Rhistory
+.RData
+.Rproj.user/
+
+# Rendered HTML (GitHub displays the .md files instead)
+*.html
+
+# PitchBook raw data too large for GitHub (>100 MB)
+alldeals.csv
+allcompanies.csv
+alldealswithinvestors.csv
+*.zip
+
+# Word lock files
+~$*

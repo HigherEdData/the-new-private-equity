@@ -1,24 +1,9 @@
----
-title: "Figure 1"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
-
-```{r setup, include=FALSE}
-library(scales)
-library(blscrapeR)
-library(gt)
-library(tidyverse)
-library(data.table)
-
-knitr::opts_chunk$set(echo = TRUE)
-```
+Figure 1
+================
 
 # import data
 
-```{r}
+``` r
 path <- "PitchBook_Pivot_US_Funds.csv"
 
 # --- Import + basic cleaning ---
@@ -50,8 +35,7 @@ data1 <- funds %>%
   arrange(`Closed Year`)
 ```
 
-
-```{r}
+``` r
 # --- CPI adjustment to 2023 dollars (January CPI-U index) ---
 data("cu_main", package = "blscrapeR")
 
@@ -68,7 +52,7 @@ cpi_2023 <- cpi_jan %>% filter(year == 2023) %>% pull(cpi)
 
 # Figure 1
 
-```{r}
+``` r
 # --- Build data2 ---
 todrop <- c(
   "Fund Size Mean", "Fund Size Median", "Fund Size Max",
@@ -82,7 +66,14 @@ data2 <- funds %>%
   filter(`Closed Year` >= 1980) %>%
   arrange(`Closed Year`, `Fund Category`, `Fund Type`) %>%
   select(-any_of(todrop))
+```
 
+    ## Warning: There was 1 warning in `mutate()`.
+    ## ℹ In argument: `Closed Year = as.integer(`Closed Year`)`.
+    ## Caused by warning:
+    ## ! NAs introduced by coercion
+
+``` r
 # Keep only the "All" rollup for these categories (drop their subtypes)
 data2 <- data2 %>%
   filter((`Fund Category` != "Venture Capital") | (`Fund Type` == "All")) %>%
@@ -121,7 +112,7 @@ data2 <- data2 %>%
   mutate(category = recode(category, !!!replacements))
 ```
 
-```{r}
+``` r
 # --- CPI-adjust Fund Size Sum to 2023 dollars, then 3-year centered rolling mean by category ---
 plot2_df <- data2 %>%
   left_join(cpi_jan, by = c("Closed Year" = "year")) %>%
@@ -196,3 +187,4 @@ ggsave("figures/f1_funds_raised.png", p2 + scale_color_brewer(palette = "Dark2")
 knitr::include_graphics("../figures/f1_funds_raised.png", error = FALSE)
 ```
 
+![](../figures/f1_funds_raised.png)<!-- -->

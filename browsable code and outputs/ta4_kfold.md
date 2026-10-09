@@ -1,51 +1,19 @@
----
-title: "Table A4: Statistics for K-Fold Cross Validation of Deal Size Imputation Model"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
+Table A4: Statistics for K-Fold Cross Validation of Deal Size Imputation
+Model
+================
 
-This notebook runs the 10-fold cross validation of the MICE deal size imputation
-model (no public caps variant: the fund-size cap applies only to private-target
-deals) and reports Table A4.
+This notebook runs the 10-fold cross validation of the MICE deal size
+imputation model (no public caps variant: the fund-size cap applies only
+to private-target deals) and reports Table A4.
 
-The k-fold run takes many hours (20 imputations x 15 iterations per fold), so it
-only executes when `run_kfold` is set to `TRUE`. Otherwise the notebook builds
-Table A4 from the saved fold predictions in `kfold_dir`.
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
-
-library(data.table)  # data manipulation
-library(mice)        # multiple imputation by chained equations
-library(forcats)     # factor collapsing
-library(flextable)   # publication-quality tables with Word export
-library(officer)     # borders and page setup for the .docx output
-
-# Set to TRUE to rerun the k-fold cross validation from scratch (or resume it)
-run_kfold <- FALSE
-
-# PitchBook buyout data prepared for imputation (not included in this repository)
-input_rds <- "../data/Full Production Stage Linear Imputation/buyout_data_forimputation.rds"
-
-# Fold predictions and summaries are written to / read from this folder
-kfold_dir <- "no public caps k-fold cross validation"
-
-output_docx <- "tables/ta4_kfold.docx"
-dir.create("tables", showWarnings = FALSE)
-
-# K-fold settings
-k          <- 10L
-m          <- 20L
-maxit      <- 15L
-seed       <- 2026L
-start_fold <- 1L
-```
+The k-fold run takes many hours (20 imputations x 15 iterations per
+fold), so it only executes when `run_kfold` is set to `TRUE`. Otherwise
+the notebook builds Table A4 from the saved fold predictions in
+`kfold_dir`.
 
 # Build imputation dataset
 
-```{r build-data, eval = run_kfold}
+``` r
 build_imputation_data <- function(input_rds, checked_csv = NULL) {
   buyout_data <- readRDS(input_rds)
   setDT(buyout_data)
@@ -181,7 +149,7 @@ m_data <- build_imputation_data(input_rds)
 
 # MICE specification
 
-```{r mice-spec, eval = run_kfold}
+``` r
 build_mice_spec <- function(m_data) {
   dealformula <- as.formula(
     log_dealsize_2023d ~
@@ -347,7 +315,7 @@ spec <- build_mice_spec(m_data)
 
 # K-fold functions
 
-```{r kfold-functions, eval = run_kfold}
+``` r
 make_folds <- function(n, k, seed) {
   set.seed(seed)
   sample(rep(seq_len(k), length.out = n))
@@ -478,12 +446,12 @@ write_fold_outputs <- function(predictions, output_dir, k, m, maxit, seed, n_obs
 
 # Run k-fold cross validation
 
-Each fold hides about 10 percent of the known deal sizes, imputes them with the
-MICE model, and saves the predictions. Folds already present in
-`cv_mice_dealsize_predictions.csv` are skipped, so an interrupted run can be
-resumed by rerunning this chunk (or by setting `start_fold`).
+Each fold hides about 10 percent of the known deal sizes, imputes them
+with the MICE model, and saves the predictions. Folds already present in
+`cv_mice_dealsize_predictions.csv` are skipped, so an interrupted run
+can be resumed by rerunning this chunk (or by setting `start_fold`).
 
-```{r run-kfold, eval = run_kfold}
+``` r
 dir.create(kfold_dir, recursive = TRUE, showWarnings = FALSE)
 
 observed_idx <- which(!is.na(m_data$dealsize_2023d))
@@ -549,10 +517,11 @@ for (fold in seq.int(start_fold, k)) {
 
 # Table A4
 
-Table A4 is built from the cumulative fold predictions, comparing imputed deal
-sizes to the known deal sizes they replaced, overall and by deal type.
+Table A4 is built from the cumulative fold predictions, comparing
+imputed deal sizes to the known deal sizes they replaced, overall and by
+deal type.
 
-```{r table-a4-metrics}
+``` r
 predictions <- fread(file.path(kfold_dir, "cv_mice_dealsize_predictions.csv"))
 
 score_publication_predictions <- function(dt) {
@@ -592,7 +561,7 @@ metrics[, deal_type := gsub(" to ", "-to-", deal_type)]  # e.g. "Private to PE" 
 setcolorder(metrics, "deal_type")
 ```
 
-```{r table-a4-format}
+``` r
 format_num <- function(x, digits) formatC(x, format = "f", digits = digits, big.mark = ",")
 format_dollars <- function(x, unit, digits = 1) {
   paste0(ifelse(x < 0, "-$", "$"), formatC(abs(x), format = "f", digits = digits, big.mark = ","), unit)
@@ -650,14 +619,16 @@ panel_c <- metrics[, .(
   style_panel()
 ```
 
-```{r table-a4}
+``` r
 invisible(save_as_image(panel_a, "tables/ta4a_kfold_totals.png", res = 200))
 invisible(save_as_image(panel_b, "tables/ta4b_kfold_log_accuracy.png", res = 200))
 invisible(save_as_image(panel_c, "tables/ta4c_kfold_dollar_accuracy.png", res = 200))
 knitr::include_graphics(c("../tables/ta4a_kfold_totals.png", "../tables/ta4b_kfold_log_accuracy.png", "../tables/ta4c_kfold_dollar_accuracy.png"), error = FALSE)
 ```
 
-```{r export}
+![](../tables/ta4a_kfold_totals.png)<!-- -->![](../tables/ta4b_kfold_log_accuracy.png)<!-- -->![](../tables/ta4c_kfold_dollar_accuracy.png)<!-- -->
+
+``` r
 save_as_docx(
   panel_a, panel_b, panel_c,
   path = output_docx,

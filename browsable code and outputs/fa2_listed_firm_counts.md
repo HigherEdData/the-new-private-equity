@@ -1,26 +1,21 @@
----
-title: "Figure A2"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
+Figure A2
+================
 
-```{r message = FALSE, warning = FALSE}
+``` r
 library(tidyverse)
 library(readxl)
 library(data.table)
 ```
 
-
 Load files
-```{r}
+
+``` r
 data <- read.csv("d_net_worth_listed_firms.csv")
 ```
 
-
 Figure A2
-```{r}
+
+``` r
 firm_count <- data %>% 
   filter(Year>1979, Year<2021) %>% 
   mutate(All = listed + OTC) %>% 
@@ -63,3 +58,4 @@ ggsave(plot = firm_count, "figures/fa2_listed_firm_counts.png", height = 5, widt
 knitr::include_graphics("../figures/fa2_listed_firm_counts.png", error = FALSE)
 ```
 
+![](../figures/fa2_listed_firm_counts.png)<!-- -->

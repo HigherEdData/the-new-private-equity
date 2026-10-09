@@ -1,20 +1,15 @@
----
-title: "Figure 7"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
+Figure 7
+================
 
-```{r message = FALSE, warning = FALSE}
+``` r
 library(tidyverse)
 library(slider)
 library(scales)
 ```
 
-
 Figure 7 - IPO vs M&A among exits to public firms (3 rolling average)
-```{r}
+
+``` r
 buyout_exits_status <- readRDS("buyout_exits_status.RDS")
 
 buyout_exits_public <- buyout_exits_status %>% 
@@ -103,3 +98,5 @@ buyout_exits_public <- buyout_exits_status %>%
 ggsave("figures/f7_public_exits.png", buyout_exits_public, height = 6, width = 12)
 knitr::include_graphics("../figures/f7_public_exits.png", error = FALSE)
 ```
+
+![](../figures/f7_public_exits.png)<!-- -->

@@ -1,5 +1,6 @@
 ---
 title: "Table 1"
+knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
 output:
   github_document:
     html_preview: false
@@ -530,5 +531,5 @@ lbo_gt
 ```{r}
 gtsave(lbo_gt, "tables/t1_buyout_summary.docx")
 gtsave(lbo_gt, "tables/t1_buyout_summary.png", zoom = 2, expand = 5, vwidth = 8 * 90 + 300)  # 2× DPI
-knitr::include_graphics("tables/t1_buyout_summary.png")
+knitr::include_graphics("../tables/t1_buyout_summary.png", error = FALSE)
 ```

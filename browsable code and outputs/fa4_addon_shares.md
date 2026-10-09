@@ -1,20 +1,15 @@
----
-title: "Figure A4"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
+Figure A4
+================
 
-```{r message = FALSE, warning = FALSE}
+``` r
 library(tidyverse)
 library(data.table)
 library(slider)
 ```
 
-
 Load imputed LBO data
-```{r}
+
+``` r
 imp_obj <- readRDS("imputed_data_nopubliccap.Rds")
 
 # Original data (with NAs)
@@ -56,10 +51,9 @@ buyout_deals_imputed <- buyout_deals_imputed %>%
   mutate(known_deal_size = ifelse(!is.na(dealsize_2023d), "known", "imputed"))
 ```
 
-
-
 Figure A4 - Add ons by deal type (known and imputed)
-```{r}
+
+``` r
 addons_base <- buyout_deals_imputed %>%
   filter(!is.na(dealyear)) %>%
   group_by(dealyear, transfertype, addon) %>%
@@ -133,15 +127,33 @@ addons <- ggplot(addons_plot, aes(x = dealyear, y = share,
         legend.title     = element_text(size = 20),
         strip.text       = element_text(size = 20),
         panel.grid.minor = element_blank())
+```
 
+    ## Warning: Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
+    ## ℹ Please use `linewidth` instead.
+    ## This warning is displayed once per session.
+    ## Call `lifecycle::last_lifecycle_warnings()` to see where this warning was
+    ## generated.
+
+``` r
 ggsave("figures/fa4_addon_shares_alldeals.png", addons, height = 10, width = 11)
+```
+
+    ## Warning: Removed 8 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
+    ## Warning: Removed 8 rows containing missing values or values outside the scale range
+    ## (`geom_point()`).
+
+``` r
 knitr::include_graphics("../figures/fa4_addon_shares_alldeals.png", error = FALSE)
 ```
 
-
+![](../figures/fa4_addon_shares_alldeals.png)<!-- -->
 
 Figure A4 - Add ons by deal type (known only)
-```{r}
+
+``` r
 addons_base <- buyout_deals_imputed %>%
   filter(!is.na(dealyear)) %>%
   filter(known_deal_size == "known") %>%
@@ -218,5 +230,16 @@ addons_ <- ggplot(addons_plot, aes(x = dealyear, y = share,
         panel.grid.minor = element_blank())
 
 ggsave("figures/fa4_addon_shares_knownsize.png", addons_, height = 10, width = 11)
+```
+
+    ## Warning: Removed 10 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
+    ## Warning: Removed 10 rows containing missing values or values outside the scale range
+    ## (`geom_point()`).
+
+``` r
 knitr::include_graphics("../figures/fa4_addon_shares_knownsize.png", error = FALSE)
 ```
+
+![](../figures/fa4_addon_shares_knownsize.png)<!-- -->

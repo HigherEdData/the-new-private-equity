@@ -1,26 +1,15 @@
----
-title: "Figure 1"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
+Figure A1
+================
 
-```{r setup, include=FALSE}
-library(scales)
-library(blscrapeR)
-library(gt)
-library(tidyverse)
-library(data.table)
+Import data
 
-knitr::opts_chunk$set(echo = TRUE)
+``` r
+path <- "PitchBook_Pivot_US_Funds.csv"
 ```
 
-# import data
+Prep the data
 
-```{r}
-path <- "PitchBook_Pivot_US_Funds.csv"
-
+``` r
 # --- Import + basic cleaning ---
 funds <- read_csv(path, show_col_types = FALSE) %>%
   dplyr::select(1:12) %>%
@@ -38,37 +27,6 @@ clean_num <- function(x) {
 funds <- funds %>%
   mutate(across(all_of(value_cols), clean_num))
 
-data1 <- funds %>%
-  filter(
-    `Fund Category` == "All",
-    `Fund Type` == "All",
-    `Closed Year` != "All",
-    `Closed Year` != "Other / Unknown"
-  ) %>%
-  select(-any_of(c("Fund Type", "Fund Category", "Fund Size Count"))) %>%
-  mutate(`Closed Year` = as.integer(`Closed Year`)) %>%
-  arrange(`Closed Year`)
-```
-
-
-```{r}
-# --- CPI adjustment to 2023 dollars (January CPI-U index) ---
-data("cu_main", package = "blscrapeR")
-
-cpi_jan <- cu_main %>%
-  mutate(date = as.Date(date)) %>%
-  filter(format(date, "%m") == "01") %>%
-  transmute(
-    year = as.integer(format(date, "%Y")),
-    cpi = as.numeric(value)
-  )
-
-cpi_2023 <- cpi_jan %>% filter(year == 2023) %>% pull(cpi)
-```
-
-# Figure 1
-
-```{r}
 # --- Build data2 ---
 todrop <- c(
   "Fund Size Mean", "Fund Size Median", "Fund Size Max",
@@ -82,7 +40,14 @@ data2 <- funds %>%
   filter(`Closed Year` >= 1980) %>%
   arrange(`Closed Year`, `Fund Category`, `Fund Type`) %>%
   select(-any_of(todrop))
+```
 
+    ## Warning: There was 1 warning in `mutate()`.
+    ## ℹ In argument: `Closed Year = as.integer(`Closed Year`)`.
+    ## Caused by warning:
+    ## ! NAs introduced by coercion
+
+``` r
 # Keep only the "All" rollup for these categories (drop their subtypes)
 data2 <- data2 %>%
   filter((`Fund Category` != "Venture Capital") | (`Fund Type` == "All")) %>%
@@ -121,23 +86,24 @@ data2 <- data2 %>%
   mutate(category = recode(category, !!!replacements))
 ```
 
-```{r}
-# --- CPI-adjust Fund Size Sum to 2023 dollars, then 3-year centered rolling mean by category ---
+Appendix 1
+
+``` r
 plot2_df <- data2 %>%
-  left_join(cpi_jan, by = c("Closed Year" = "year")) %>%
-  mutate(
-    cpi_factor = cpi_2023 / cpi,
-    fund_size_sum_2023 = `Fund Size Sum` * cpi_factor
-  ) %>%
-  select(`Closed Year`, category, fund_size_sum_2023) %>%
+  select(`Closed Year`, category, `Fund Size Sum`) %>%
   group_by(category) %>%
   arrange(`Closed Year`, .by_group = TRUE) %>%
   mutate(
-    roll3_fund_size_sum_2023 = rowMeans(
-      #cbind(lag(fund_size_sum_2023), fund_size_sum_2023, lead(fund_size_sum_2023)),
-      cbind(lag(fund_size_sum_2023), lead(fund_size_sum_2023), fund_size_sum_2023),
+    roll3_fund_size = rowMeans(
+      cbind(lag(`Fund Size Sum`), lead(`Fund Size Sum`), `Fund Size Sum`),
       na.rm = TRUE
     )
+  ) %>%
+  ungroup() %>%
+  group_by(`Closed Year`) %>%
+  mutate(
+    total_roll3 = sum(roll3_fund_size, na.rm = TRUE),
+    share       = roll3_fund_size / total_roll3
   ) %>%
   ungroup() %>%
   filter(`Closed Year` >= 1985, `Closed Year` <= 2020)
@@ -145,34 +111,32 @@ plot2_df <- data2 %>%
 # --- Order legend to match the final (most recent) line ordering ---
 cat_order <- plot2_df %>%
   group_by(category) %>%
-  slice_max(`Closed Year`, n = 1, with_ties = FALSE) %>%   # last point per category
+  slice_max(`Closed Year`, n = 1, with_ties = FALSE) %>%
   ungroup() %>%
-  arrange(desc(roll3_fund_size_sum_2023)) %>%             # top-to-bottom at the end
+  arrange(desc(share)) %>%
   pull(category)
 
 plot2_df <- plot2_df %>%
   mutate(category = factor(category, levels = cat_order))
 
-p2 <- ggplot(plot2_df, aes(x = `Closed Year`, y = roll3_fund_size_sum_2023,
+p2 <- ggplot(plot2_df, aes(x = `Closed Year`, y = share,
                             color = category, linetype = category, shape = category)) +
   geom_line() +
   geom_point() +
   labs(
     title = "",
-    x = NULL,
-    y = "Amount raised (2023 USD)"
+    x     = NULL,
+    y     = "Share of total funds raised"
   ) +
   theme_minimal() +
   theme(
-    plot.caption   = element_text(hjust = 0.5),
+    plot.caption    = element_text(hjust = 0.5),
     legend.position = "bottom",
-    legend.title   = element_blank()
+    legend.title    = element_blank()
   ) +
   scale_y_continuous(
-    labels = scales::label_currency(
-      scale = 1e6,
-      scale_cut = scales::cut_short_scale()
-    )
+    labels = scales::percent_format(accuracy = 1),
+    breaks = seq(0, 1, by = 0.1)
   ) +
   scale_linetype_manual(
     values = c("solid", "dashed", "dotted", "dotdash", "longdash", "twodash")[seq_along(unique(plot2_df$category))]
@@ -191,8 +155,9 @@ p2 <- ggplot(plot2_df, aes(x = `Closed Year`, y = roll3_fund_size_sum_2023,
   theme(legend.text = element_text(size = 11),
         panel.grid.minor = element_blank())
 
-ggsave("figures/f1_funds_raised.png", p2 + scale_color_brewer(palette = "Dark2"),
+ggsave("figures/fa1_funds_raised_shares.png", p2 + scale_color_brewer(palette = "Dark2"),
        width = 7.5, height = 5, units = "in", dpi = 320)
-knitr::include_graphics("../figures/f1_funds_raised.png", error = FALSE)
+knitr::include_graphics("../figures/fa1_funds_raised_shares.png", error = FALSE)
 ```
 
+![](../figures/fa1_funds_raised_shares.png)<!-- -->

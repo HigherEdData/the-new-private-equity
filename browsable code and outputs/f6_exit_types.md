@@ -1,21 +1,15 @@
----
-title: "Figure 6"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
+Figure 6
+================
 
-```{r message = FALSE, warning = FALSE}
+``` r
 library(tidyverse)
 library(slider)
 library(scales)
 ```
 
-
-
 Figure 6 Exits from LBOs (3 year rolling average)
-```{r}
+
+``` r
 buyout_exits_status <- readRDS("buyout_exits_status.RDS")
 
 buyout_exits_revised_line <- buyout_exits_status %>% 
@@ -127,7 +121,17 @@ buyout_exits_revised_line <- buyout_exits_status %>%
     legend.title     = element_text(size = 14),
     panel.grid.minor = element_blank()
   )
+```
 
+    ## Warning: Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
+    ## ℹ Please use `linewidth` instead.
+    ## This warning is displayed once per session.
+    ## Call `lifecycle::last_lifecycle_warnings()` to see where this warning was
+    ## generated.
+
+``` r
 ggsave("figures/f6_exit_types.png", buyout_exits_revised_line, height = 6, width = 10)
 knitr::include_graphics("../figures/f6_exit_types.png", error = FALSE)
 ```
+
+![](../figures/f6_exit_types.png)<!-- -->

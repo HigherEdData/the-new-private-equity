@@ -1,20 +1,15 @@
----
-title: "Figure 5"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
+Figure 5
+================
 
-```{r message = FALSE, warning = FALSE}
+``` r
 library(tidyverse)
 library(data.table)
 library(slider)
 ```
 
-
 Load imputed LBO data
-```{r}
+
+``` r
 imp_obj <- readRDS("imputed_data_nopubliccap.Rds")
 
 # Original data (with NAs)
@@ -56,10 +51,9 @@ buyout_deals_imputed <- buyout_deals_imputed %>%
   mutate(known_deal_size = ifelse(!is.na(dealsize_2023d), "known", "imputed"))
 ```
 
-
-
 Figure 5 - add-ons
-```{r}
+
+``` r
 # Helper: compute the All-LBOs add-on shares for a given input table
 compute_addons_all <- function(df) {
   df %>%
@@ -152,7 +146,26 @@ addons <- ggplot(addons_plot, aes(x = dealyear, y = share,
         legend.text      = element_text(size = 20),
         strip.text       = element_text(size = 17),
         panel.grid.minor = element_blank())
+```
 
+    ## Warning: Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
+    ## ℹ Please use `linewidth` instead.
+    ## This warning is displayed once per session.
+    ## Call `lifecycle::last_lifecycle_warnings()` to see where this warning was
+    ## generated.
+
+``` r
 ggsave("figures/f5_addon_shares.png", addons, height = 6, width = 12)
+```
+
+    ## Warning: Removed 4 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
+    ## Warning: Removed 4 rows containing missing values or values outside the scale range
+    ## (`geom_point()`).
+
+``` r
 knitr::include_graphics("../figures/f5_addon_shares.png", error = FALSE)
 ```
+
+![](../figures/f5_addon_shares.png)<!-- -->

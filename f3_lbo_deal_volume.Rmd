@@ -1,5 +1,6 @@
 ---
 title: "Figure 3"
+knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
 output:
   github_document:
     html_preview: false
@@ -157,5 +158,5 @@ p_B <- ggplot(pooled_year_log, aes(x = dealyear)) +
 
 ggsave("figures/f3_lbo_deal_volume.png", p_B,
        width = 8, height = 5, units = "in", dpi = 320)
-knitr::include_graphics("figures/f3_lbo_deal_volume.png")
+knitr::include_graphics("../figures/f3_lbo_deal_volume.png", error = FALSE)
 ```

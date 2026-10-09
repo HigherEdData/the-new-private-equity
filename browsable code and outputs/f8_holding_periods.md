@@ -1,20 +1,15 @@
----
-title: "Figure 8"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
+Figure 8
+================
 
-```{r message = FALSE, warning = FALSE}
+``` r
 library(tidyverse)
 library(slider)
 library(scales)
 ```
 
-
 Figure 8 - holding period
-```{r}
+
+``` r
 buyout_exits_status <- readRDS("buyout_exits_status.RDS")
 
 holding_period <- buyout_exits_status %>% 
@@ -69,7 +64,23 @@ holding_period <- buyout_exits_status %>%
         legend.text      = element_text(size = 15),
         legend.title     = element_text(size = 15),
         panel.grid.minor = element_blank())
+```
 
+    ## Warning: Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
+    ## ℹ Please use `linewidth` instead.
+    ## This warning is displayed once per session.
+    ## Call `lifecycle::last_lifecycle_warnings()` to see where this warning was
+    ## generated.
+
+``` r
 ggsave("figures/f8_holding_periods.png", holding_period, height = 6, width = 9)
+```
+
+    ## Warning: Removed 68 rows containing missing values or values outside the scale range
+    ## (`geom_label()`).
+
+``` r
 knitr::include_graphics("../figures/f8_holding_periods.png", error = FALSE)
 ```
+
+![](../figures/f8_holding_periods.png)<!-- -->

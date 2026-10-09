@@ -1,29 +1,23 @@
----
-title: "Figure 9"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
+Figure 9
+================
 
-```{r message = FALSE, warning = FALSE}
+``` r
 library(tidyverse)
 library(data.table)
 library(lubridate)
 ```
 
-
 Load PitchBook & Refinitiv data
-```{r}
+
+``` r
 companies <- fread("allcompanies.csv")
 deals <- fread("alldeals.csv")
 ma <- read.csv("refinitiv_MA_totalcounts.csv")
 ```
 
+Figure 9 - PE activity as a share of all M&A deals (Refinitiv)
 
-
-Figure 9 - PE activity as a share of all M&A deals (Refinitiv) 
-```{r}
+``` r
 deals_companies <- left_join(deals, companies, by = "companyid")
 
 deals_parsed <- deals_companies %>%
@@ -40,7 +34,17 @@ company_buyouts <- deals_parsed %>%
                                 NA_real_),
     .groups = "drop"
   )
+```
 
+    ## Warning: There were 343341 warnings in `summarise()`.
+    ## The first warning was:
+    ## ℹ In argument: `first_buyout_date = if_else(...)`.
+    ## ℹ In group 1: `companyid = "100000-27"`, `companyname = "SIS RESOURCES"`.
+    ## Caused by warning in `min()`:
+    ## ! no non-missing arguments to min; returning Inf
+    ## ℹ Run `dplyr::last_dplyr_warnings()` to see the 343340 remaining warnings.
+
+``` r
 buyout <- deals_parsed %>%
   left_join(company_buyouts, by = c("companyid", "companyname")) %>%
   filter(number_buyouts > 0) %>%
@@ -110,7 +114,23 @@ MA_activity <- combined %>%
        shape    = "PE activity") +
   theme_minimal() +
   theme(panel.grid.minor = element_blank())
+```
 
+    ## Warning: Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
+    ## ℹ Please use `linewidth` instead.
+    ## This warning is displayed once per session.
+    ## Call `lifecycle::last_lifecycle_warnings()` to see where this warning was
+    ## generated.
+
+``` r
 ggsave("figures/f9_ma_shares.png", MA_activity, height = 4, width = 7)
+```
+
+    ## Warning: Removed 10 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
+``` r
 knitr::include_graphics("../figures/f9_ma_shares.png", error = FALSE)
 ```
+
+![](../figures/f9_ma_shares.png)<!-- -->

@@ -1,27 +1,22 @@
----
-title: "Figure 2"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
+Figure 2
+================
 
-```{r message = FALSE, warning = FALSE}
+``` r
 library(tidyverse)
 library(readxl)
 library(data.table)
 ```
 
-
 Load files
-```{r}
+
+``` r
 data <- read.csv("d_net_worth_listed_firms.csv")
 ```
 
+Net worth breakdown of US nonfinancial firms (HISTORICAL) using Federal
+Reserve data with PE ownership
 
-
-Net worth breakdown of US nonfinancial firms (HISTORICAL) using Federal Reserve data with PE ownership
-```{r}
+``` r
 networth_breakdown_all <- data %>% 
   filter(Year>1996, Year<2024) %>% 
   mutate(Private_corporations_Other = (Corporate_networth_historical-equity_listed_nonFI_book-Pitchbook_PE_VC_Inv)/(Corporate_networth_historical +Noncorporate_networth),
@@ -75,3 +70,5 @@ networth_breakdown_all <- data %>%
 ggsave(plot = networth_breakdown_all, "figures/f2_net_worth.png", height = 5, width = 7)
 knitr::include_graphics("../figures/f2_net_worth.png", error = FALSE)
 ```
+
+![](../figures/f2_net_worth.png)<!-- -->

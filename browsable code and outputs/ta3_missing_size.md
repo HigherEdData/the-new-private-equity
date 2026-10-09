@@ -1,27 +1,9 @@
----
-title: "Table A3: Missing Deal Size Percentages by Deal Type and Time Period"
-knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
-output:
-  github_document:
-    html_preview: false
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
-
-library(dplyr)      # data manipulation verbs
-library(tidyr)      # pivoting to wide table layout
-library(lubridate)  # date handling
-library(flextable)  # publication-quality tables with Word export
-library(officer)    # page setup for the .docx output
-
-input_rds <- "../data/No Public Cap Full Production Stage Linear Imputation/buyout_data_forimputation.rds"
-output_docx <- "tables/ta3_missing_size.docx"
-```
+Table A3: Missing Deal Size Percentages by Deal Type and Time Period
+================
 
 # Load and prepare data
 
-```{r load}
+``` r
 buyout_data <- readRDS(input_rds)
 # IDate columns saved with double storage are rejected by newer vctrs; convert them to Date
 for (col in names(buyout_data)[vapply(buyout_data, inherits, logical(1), "IDate")]) {
@@ -54,7 +36,7 @@ deals <- buyout_data %>%
 
 # Percent missing by deal type and period
 
-```{r missing-table}
+``` r
 # Percent missing within each period x deal type cell
 by_type <- deals %>%
   group_by(period, transfertype) %>%
@@ -77,9 +59,20 @@ missing_wide <- bind_rows(by_type, all_types) %>%
 missing_wide
 ```
 
+    ## # A tibble: 7 × 6
+    ##   Period    `Public to PE` `Private to PE` Secondary `VC to PE` `All deals`
+    ##   <chr>              <dbl>           <dbl>     <dbl>      <dbl>       <dbl>
+    ## 1 1985-1989           10.5            70.8      66.7       80          62.5
+    ## 2 1990-1994           25.7            68.6      51.4       55          64.9
+    ## 3 1995-1999           20.9            69.5      63.3       73.4        66.0
+    ## 4 2000-2004           24.5            65.8      50.2       67.2        61.4
+    ## 5 2005-2009           22.5            75.6      61.1       69.7        70.9
+    ## 6 2010-2014           23.7            83.6      70.1       76.8        78.9
+    ## 7 2015-2019           28.3            90.0      75.4       82.0        85.9
+
 # Formatted table
 
-```{r flextable}
+``` r
 ta3 <- missing_wide %>%
   flextable() %>%
   colformat_double(digits = 1) %>%
@@ -101,9 +94,11 @@ invisible(save_as_image(ta3, "tables/ta3_missing_size.png", res = 200))
 knitr::include_graphics("../tables/ta3_missing_size.png", error = FALSE)
 ```
 
+![](../tables/ta3_missing_size.png)<!-- -->
+
 # Export to Word
 
-```{r export}
+``` r
 save_as_docx(
   ta3,
   path = output_docx,

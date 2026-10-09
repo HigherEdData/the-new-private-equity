@@ -1,0 +1,115 @@
+---
+title: "Table A2: Private Equity and Venture Fund Assets Under Management in Billions (2023 Dollars)"
+knit: (function(input, ...) rmarkdown::render(input, output_dir = "browsable code and outputs"))
+output:
+  github_document:
+    html_preview: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+library(dplyr)      # data manipulation verbs
+library(flextable)  # publication-quality tables with Word export
+library(officer)    # borders and page setup for the .docx output
+
+output_docx <- "tables/ta2_pe_vc_aum.docx"
+dir.create("tables", showWarnings = FALSE)
+```
+
+# Load data
+
+```{r load}
+# PitchBook dry powder and investments (NAV) and SEC Form PF gross assets
+# (Q1 of each year) for US PE and VC funds, in millions of nominal dollars.
+# Built by "Data prep for Figures 2, A2, A5.Rmd".
+aum_nominal <- read.csv("d_net_worth_listed_firms.csv") %>%
+  select(Year, PE_DryPowder, PE_Investments, VC_DryPowder, VC_Investments,
+         PE_Gross = GAV_PE, VC_Gross = GAV_VC) %>%
+  filter(Year >= 1997, Year <= 2023)
+
+# --- CPI adjustment to 2023 dollars (January CPI-U index) ---
+data("cu_main", package = "blscrapeR")
+
+cpi_jan <- cu_main %>%
+  mutate(date = as.Date(date)) %>%
+  filter(format(date, "%m") == "01") %>%
+  transmute(
+    Year = as.integer(format(date, "%Y")),
+    cpi = as.numeric(value)
+  )
+
+cpi_2023 <- cpi_jan %>% filter(Year == 2023) %>% pull(cpi)
+```
+
+# Convert to billions of 2023 dollars
+
+```{r convert}
+aum <- aum_nominal %>%
+  left_join(cpi_jan, by = "Year") %>%
+  mutate(
+    cpi_factor = cpi_2023 / cpi,
+    across(c(PE_DryPowder, PE_Investments, VC_DryPowder, VC_Investments, PE_Gross, VC_Gross),
+           ~ .x / 1000 * cpi_factor),
+    # AUM = Dry Powder + Investments
+    PE_AUM = PE_DryPowder + PE_Investments,
+    VC_AUM = VC_DryPowder + VC_Investments
+  ) %>%
+  select(Year, PE_DryPowder, PE_Investments, PE_AUM,
+         VC_DryPowder, VC_Investments, VC_AUM, PE_Gross, VC_Gross) %>%
+  arrange(Year)
+
+aum
+```
+
+# Formatted table
+
+```{r flextable}
+dollars <- function(x) ifelse(is.na(x), "", paste0("$", formatC(round(x), format = "d", big.mark = ",")))
+
+ta2 <- aum %>%
+  mutate(Year = as.character(Year),
+         across(-Year, dollars)) %>%
+  flextable() %>%
+  set_header_labels(
+    Year = "",
+    PE_DryPowder = "PE Dry Powder", PE_Investments = "PE Investment", PE_AUM = "PE AUM",
+    VC_DryPowder = "VC Dry Powder", VC_Investments = "VC Investment", VC_AUM = "VC AUM",
+    PE_Gross = "PE Gross Assets", VC_Gross = "VC Gross Assets"
+  ) %>%
+  add_header_row(values = c("", "PitchBook", "SEC Form PF"), colwidths = c(1, 6, 2)) %>%
+  set_caption("Table A2: Private Equity and Venture Fund Assets Under Management in Billions (2023 Dollars)") %>%
+  add_footer_lines("Note: Data are from the SEC Form PF (Gross Assets) for private equity and venture capital funds and PitchBook (Investments) for private equity and venture capital funds. AUM = Dry Powder + Investments.") %>%
+  font(fontname = "Times New Roman", part = "all") %>%
+  fontsize(size = 8, part = "all") %>%
+  bold(part = "header") %>%
+  align(j = -1, align = "center", part = "all") %>%
+  align(j = 1, align = "left", part = "all") %>%
+  # Booktabs-style horizontal rules only (no vertical borders)
+  border_remove() %>%
+  hline_top(part = "header", border = fp_border(width = 1.5)) %>%
+  hline(i = 1, j = 2:9, part = "header", border = fp_border(width = 0.75)) %>%
+  hline_bottom(part = "header", border = fp_border(width = 0.75)) %>%
+  hline_bottom(part = "body", border = fp_border(width = 1.5)) %>%
+  # Fixed widths that fit a portrait page with 1-inch margins (6.5 in)
+  width(j = 1, width = 0.5) %>%
+  width(j = 2:9, width = 0.74) %>%
+  set_table_properties(layout = "fixed")
+
+invisible(save_as_image(ta2, "tables/ta2_pe_vc_aum.png", res = 200))
+knitr::include_graphics("../tables/ta2_pe_vc_aum.png", error = FALSE)
+```
+
+# Export to Word
+
+```{r export}
+save_as_docx(
+  ta2,
+  path = output_docx,
+  pr_section = prop_section(
+    page_size = page_size(width = 8.5, height = 11, orient = "portrait"),  # US Letter
+    page_margins = page_mar(top = 1, bottom = 1, left = 1, right = 1),
+    type = "continuous"
+  )
+)
+```
